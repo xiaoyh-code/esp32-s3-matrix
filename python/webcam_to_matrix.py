@@ -76,6 +76,20 @@ def find_serial_port():
     return ports[0].device
 
 
+def find_camera():
+    for idx in range(5):
+        cap = cv2.VideoCapture(idx)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+        if cap.isOpened():
+            ret, _ = cap.read()
+            if ret:
+                print(f"Camera found at index {idx}")
+                return cap
+        cap.release()
+    return None
+
+
 def main():
     global CONTRAST_GAIN, mode
 
@@ -92,14 +106,13 @@ def main():
     print("Mode: COLOR  |  Keys: [m] toggle mode  [q] quit  [+/-] contrast")
     print("Starting stream...")
 
-    cap = cv2.VideoCapture(0)
-    if not cap.isOpened():
-        print("Cannot open webcam.")
+    cap = find_camera()
+    if cap is None:
+        print("Cannot open any webcam.")
+        print("On macOS: grant camera permission to Terminal in")
+        print("  System Preferences > Privacy & Security > Camera")
         ser.close()
         sys.exit(1)
-
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
 
     frame_count = 0
     byte_count = 0

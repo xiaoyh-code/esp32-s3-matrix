@@ -59,6 +59,14 @@ Look for something like:
 
 The Python scripts auto-detect the port, but you can modify the `find_serial_port()` function in each script if needed.
 
+### 5. macOS: Grant camera permission
+
+On macOS 14+ (Sonoma/Sequoia), camera access is blocked for terminal processes. The project includes a pre-built app bundle that triggers the permission dialog:
+
+**From Finder:** double-click `ESP32Matrix.app` in the project folder. macOS will show a camera permission dialog → click **Allow**.
+
+After granting permission once, all scripts will work from the terminal.
+
 ---
 
 ## Scripts
