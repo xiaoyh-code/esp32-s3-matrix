@@ -5,3 +5,4 @@ __pycache__/
 ai_brain.pkl
 .pio/
 ESP32Matrix.app/
+_CodeSignature/
