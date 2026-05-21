@@ -275,14 +275,14 @@ def find_serial_port():
 
 
 def find_camera():
-    for idx in range(5):
+    for idx in range(3):
         cap = cv2.VideoCapture(idx)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         if cap.isOpened():
-            ret, _ = cap.read()
+            ret, frame = cap.read()
             if ret:
-                print(f"Camera found at index {idx}")
+                print(f"Camera: FaceTime HD (index {idx})")
                 return cap
         cap.release()
     return None
@@ -300,13 +300,14 @@ def main():
     print("Waiting for ESP32...")
     time.sleep(4)
 
-    cap = find_camera()
-    if cap is None:
-        print("Cannot open any webcam.")
-        print("On macOS: grant camera permission to Terminal in")
-        print("  System Preferences > Privacy & Security > Camera")
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        print("Cannot open FaceTime camera.")
+        print("Double-click ESP32Matrix.app first to grant camera permission.")
         ser.close()
         sys.exit(1)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
     import os
     os.environ["MEDIAPIPE_DISABLE_GPU"] = "0"

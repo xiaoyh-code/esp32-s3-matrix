@@ -161,13 +161,14 @@ def main():
     time.sleep(4)
     print("Rock Paper Scissors! Show your hand. Press 'q' to quit.\n")
 
-    cap = find_camera()
-    if cap is None:
-        print("Cannot open any webcam.")
-        print("On macOS: grant camera permission to Terminal in")
-        print("  System Preferences > Privacy & Security > Camera")
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        print("Cannot open FaceTime camera.")
+        print("Double-click ESP32Matrix.app first to grant camera permission.")
         ser.close()
         sys.exit(1)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
     hands = mp_hands.Hands(
         static_image_mode=False,

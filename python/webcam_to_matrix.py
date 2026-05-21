@@ -106,13 +106,14 @@ def main():
     print("Mode: COLOR  |  Keys: [m] toggle mode  [q] quit  [+/-] contrast")
     print("Starting stream...")
 
-    cap = find_camera()
-    if cap is None:
-        print("Cannot open any webcam.")
-        print("On macOS: grant camera permission to Terminal in")
-        print("  System Preferences > Privacy & Security > Camera")
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        print("Cannot open FaceTime camera.")
+        print("Double-click ESP32Matrix.app first to grant camera permission.")
         ser.close()
         sys.exit(1)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
 
     frame_count = 0
     byte_count = 0
