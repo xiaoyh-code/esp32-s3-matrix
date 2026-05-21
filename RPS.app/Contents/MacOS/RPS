@@ -1,0 +1,5 @@
+#!/bin/bash
+DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
+source "$DIR/.venv/bin/activate"
+osascript -e 'display dialog "Rock Paper Scissors needs camera access. Click Allow in the system popup." buttons {"OK"} default button "OK" with icon note' &
+python3 "$DIR/python/rps_game.py"
