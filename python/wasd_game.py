@@ -3,38 +3,30 @@ import serial.tools.list_ports
 import time
 import sys
 import random
+import os
 import threading
 from pynput import keyboard
 
-MATRIX_W = 8
-MATRIX_H = 8
 BAUDRATE = 115200
+SYNC_MARKER, CMD_FRAME = 0xAA, 0x01
 
-SYNC_MARKER = 0xAA
-CMD_FRAME = 0x01
-
-PLAYER_COLOR = (0, 80, 255)
-TARGET_COLOR = (255, 30, 30)
-WALL_COLOR = (60, 60, 60)
-BG_COLOR = (0, 0, 0)
+PLAYER = (0, 80, 255)
+TARGET = (255, 30, 30)
+OBSTACLE = (60, 60, 60)
+BG = (0, 0, 0)
 
 keys_pressed = set()
 lock = threading.Lock()
-running = True
 
 
 def on_press(key):
-    global running
     try:
         k = key.char.lower() if hasattr(key, 'char') and key.char else None
         with lock:
-            if k == 'q':
-                running = False
-            elif k in ('w', 'a', 's', 'd'):
+            if k in ('w','a','s','d'):
                 keys_pressed.add(k)
-    except AttributeError:
-        if key == keyboard.Key.esc:
-            running = False
+    except:
+        pass
 
 
 def on_release(key):
@@ -42,149 +34,142 @@ def on_release(key):
         k = key.char.lower() if hasattr(key, 'char') and key.char else None
         with lock:
             keys_pressed.discard(k)
-    except AttributeError:
+    except:
         pass
 
 
-def find_serial_port():
-    ports = serial.tools.list_ports.comports()
-    for p in ports:
-        if "usbmodem" in p.device.lower():
+def find_port():
+    for p in serial.tools.list_ports.comports():
+        if any(x in p.device.lower() for x in ("usbmodem","usbserial","ttyacm","ttyusb")):
             return p.device
-    for p in ports:
-        if "usbserial" in p.device.lower():
-            return p.device
-    for p in ports:
-        if "ttyACM" in p.device.lower() or "ttyUSB" in p.device.lower():
-            return p.device
-    return ports[0].device if ports else None
+    return None
 
 
-def build_payload(grid):
-    payload = bytearray()
-    for y in range(MATRIX_H):
-        for x in range(MATRIX_W):
-            r, g, b = grid[y][x]
-            payload.extend([r, g, b])
-    return payload
+def send(ser, grid):
+    if not ser: return
+    b = bytearray([SYNC_MARKER, CMD_FRAME])
+    for y in range(8):
+        for x in range(8):
+            r,g,bl = grid[y][x]
+            b.extend([bl,g,r])
+    ser.write(b)
 
 
-def send_frame(ser, grid):
-    packet = bytearray([SYNC_MARKER, CMD_FRAME]) + build_payload(grid)
-    ser.write(packet)
-
-
-def new_target(exclude):
+def new_target(px,py,obstacles):
     while True:
-        x = random.randint(0, MATRIX_W - 1)
-        y = random.randint(0, MATRIX_H - 1)
-        if (x, y) != exclude:
-            return (x, y)
-
-
-def render_grid(px, py, tx, ty):
-    grid = [[BG_COLOR for _ in range(MATRIX_W)] for _ in range(MATRIX_H)]
-    grid[ty][tx] = TARGET_COLOR
-    grid[py][px] = PLAYER_COLOR
-    return grid
-
-
-def draw_terminal(grid, score, fps):
-    sys.stdout.write("\033[H")
-    sys.stdout.write(f"  WASD=move  Q=quit  Score: {score:03d}  FPS: {fps}\n")
-    sys.stdout.write("  +" + "--" * MATRIX_W + "+\n")
-    for y in range(MATRIX_H):
-        sys.stdout.write(f"  |")
-        for x in range(MATRIX_W):
-            r, g, b = grid[y][x]
-            if (r, g, b) == PLAYER_COLOR:
-                c = "\033[34m██\033[0m"
-            elif (r, g, b) == TARGET_COLOR:
-                c = "\033[31m██\033[0m"
-            elif (r, g, b) != BG_COLOR:
-                c = "\033[90m██\033[0m"
-            else:
-                c = "  "
-            sys.stdout.write(c)
-        sys.stdout.write("|\n")
-    sys.stdout.write("  +" + "--" * MATRIX_W + "+\n")
-    sys.stdout.flush()
+        x,y = random.randint(0,7), random.randint(0,7)
+        if (x,y) != (px,py) and (x,y) not in obstacles:
+            return (x,y)
 
 
 def main():
-    global running
-
-    port = find_serial_port()
-    ser = None
-    if port:
-        ser = serial.Serial(port, BAUDRATE, timeout=1)
+    port = find_port()
+    ser = serial.Serial(port, BAUDRATE, timeout=1) if port else None
+    if ser:
         time.sleep(2)
-        print(f"Connected: {port}")
-        print("Waiting for ESP32...")
-        time.sleep(3)
+        print(f"ESP32: {port}")
+        time.sleep(2)
     else:
-        print("No ESP32 found. Terminal-only mode.\n")
+        print("ESP32 not found — terminal-only mode.")
 
     listener = keyboard.Listener(on_press=on_press, on_release=on_release)
     listener.start()
 
-    px, py = MATRIX_W // 2, MATRIX_H // 2
-    tx, ty = new_target((px, py))
+    px, py = 3, 3
     score = 0
-    move_interval = 0.12
+    level = 1
+    obstacles = set()
+    tx, ty = new_target(px, py, obstacles)
+    lives = 3
+
+    move_interval = 0.15
     last_move = time.time()
 
-    print("\033[2J\033[H")
-    print("   WASD GAME — control the blue dot on ESP32 matrix!\n")
-
-    frame_count = 0
-    t0 = time.time()
+    print("\n  WASD GAME")
+    print("  Blue dot = you | Red = target | Gray = wall")
+    print("  Collect red targets. Avoid walls.")
+    print("  [WASD] move | [Q] quit\n")
 
     try:
-        while running:
+        while lives > 0:
             now = time.time()
 
             if now - last_move >= move_interval:
                 with lock:
-                    key_set = keys_pressed.copy()
+                    ks = keys_pressed.copy()
 
-                if 'w' in key_set and py > 0:
-                    py -= 1
-                if 's' in key_set and py < MATRIX_H - 1:
-                    py += 1
-                if 'a' in key_set and px > 0:
-                    px -= 1
-                if 'd' in key_set and px < MATRIX_W - 1:
-                    px += 1
+                if 'w' in ks and py > 0: py -= 1
+                if 's' in ks and py < 7: py += 1
+                if 'a' in ks and px > 0: px -= 1
+                if 'd' in ks and px < 7: px += 1
                 last_move = now
 
-            if (px, py) == (tx, ty):
-                score += 1
-                tx, ty = new_target((px, py))
+            # Check collision with obstacle
+            if (px, py) in obstacles:
+                lives -= 1
+                px, py = 3, 3
+                obstacles.clear()
+                tx, ty = new_target(px, py, obstacles)
+                print(f"  HIT WALL! Lives: {lives}")
+                if lives == 0:
+                    break
 
-            grid = render_grid(px, py, tx, ty)
+            # Collect target
+            if (px, py) == (tx, ty):
+                score += 10 * level
+                level = min(5, score // 50 + 1)
+                # Add obstacle every 2 levels
+                if level > len(obstacles) // 2:
+                    while True:
+                        ox, oy = random.randint(0,7), random.randint(0,7)
+                        if (ox,oy) not in obstacles and (ox,oy) != (px,py):
+                            obstacles.add((ox,oy))
+                            break
+                tx, ty = new_target(px, py, obstacles)
+                print(f"  Score: {score}  Level: {level}")
+
+            # Build grid
+            grid = [[BG for _ in range(8)] for _ in range(8)]
+            for ox, oy in obstacles:
+                grid[oy][ox] = OBSTACLE
+            grid[ty][tx] = TARGET
+            grid[py][px] = PLAYER
 
             if ser:
-                send_frame(ser, grid)
+                send(ser, grid)
 
-            frame_count += 1
-            if frame_count % 5 == 0:
-                fps = int(frame_count / max(now - t0, 0.01))
-                draw_terminal(grid, score, fps)
+            # Terminal display
+            sys.stdout.write("\033[H")
+            sys.stdout.write(f"  Score: {score:03d}  Level: {level}  Lives: {lives}  [Q]uit\n")
+            sys.stdout.write("  +" + "--"*8 + "+\n")
+            for y in range(8):
+                sys.stdout.write("  |")
+                for x in range(8):
+                    r,g,b = grid[y][x]
+                    if (x,y) == (px,py):
+                        sys.stdout.write("\033[34m██\033[0m")
+                    elif (x,y) == (tx,ty):
+                        sys.stdout.write("\033[31m██\033[0m")
+                    elif (r,g,b) != BG:
+                        sys.stdout.write("\033[90m██\033[0m")
+                    else:
+                        sys.stdout.write("  ")
+                sys.stdout.write("|\n")
+            sys.stdout.write("  +" + "--"*8 + "+\n")
+            sys.stdout.flush()
 
-            time.sleep(0.02)
+            if 'q' in keys_pressed:
+                break
 
-    except serial.SerialException as e:
-        print(f"\nSerial error: {e}")
+            time.sleep(0.03)
+
     except KeyboardInterrupt:
         pass
     finally:
-        running = False
         listener.stop()
-        if ser:
-            ser.close()
+        if ser: ser.close()
         sys.stdout.write("\033[2J\033[H")
-        print(f"Score: {score}")
+        print(f"Final Score: {score}  Level: {level}")
         print("Done.")
 
 
