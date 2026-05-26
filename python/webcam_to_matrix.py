@@ -12,15 +12,14 @@ BAUDRATE = 115200
 SYNC_MARKER = 0xAA
 CMD_FRAME = 0x01
 
-CONTRAST_GAIN = 2.5
+CONTRAST_GAIN = 4.0
 CONTRAST_CENTER = 127
-mode = "color"
+mode = "bw"
 
 
 def apply_contrast_stretch(gray):
     flat = gray.flatten().astype(np.float32)
-
-    p_low, p_high = np.percentile(flat, [5, 95])
+    p_low, p_high = np.percentile(flat, [2, 98])
 
     if p_high > p_low:
         stretched = (gray - p_low) / (p_high - p_low) * 255.0
@@ -33,6 +32,12 @@ def apply_contrast_stretch(gray):
     f = (f * 255.0).astype(np.uint8)
 
     return f
+
+
+def apply_threshold(gray):
+    # Otsu auto-threshold: pure black/white, no gray
+    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    return binary
 
 
 def build_color_payload(rgb):
@@ -89,8 +94,8 @@ def main():
     print(f"Connected: {port} @ {BAUDRATE} baud")
     print("Waiting for ESP32 to be ready...")
     time.sleep(4)
-    print("Mode: COLOR  |  Keys: [m] toggle mode  [q] quit  [+/-] contrast")
-    print("Starting stream...")
+    print("\nModes: COLOR | B&W | THRESHOLD | INVERT")
+    print("Keys: [m] toggle  [+/-] gain  [i] invert  [q] quit\n")
 
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
@@ -119,7 +124,8 @@ def main():
                 disp = cv2.resize(rgb, (320, 320), interpolation=cv2.INTER_NEAREST)
                 disp_bgr = cv2.cvtColor(disp, cv2.COLOR_RGB2BGR)
                 label = "COLOR"
-            else:
+
+            elif mode == "bw":
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 small = cv2.resize(gray, (MATRIX_W, MATRIX_H), interpolation=cv2.INTER_AREA)
                 boosted = apply_contrast_stretch(small)
@@ -128,13 +134,31 @@ def main():
                 disp_bgr = cv2.cvtColor(disp, cv2.COLOR_GRAY2BGR)
                 label = "B&W"
 
+            elif mode == "threshold":
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                small = cv2.resize(gray, (MATRIX_W, MATRIX_H), interpolation=cv2.INTER_AREA)
+                binary = apply_threshold(small)
+                payload = build_gray_payload(binary)
+                disp = cv2.resize(binary, (320, 320), interpolation=cv2.INTER_NEAREST)
+                disp_bgr = cv2.cvtColor(disp, cv2.COLOR_GRAY2BGR)
+                label = "THRESHOLD"
+
+            elif mode == "invert":
+                small = cv2.resize(frame, (MATRIX_W, MATRIX_H), interpolation=cv2.INTER_AREA)
+                inv = cv2.bitwise_not(small)
+                rgb = cv2.cvtColor(inv, cv2.COLOR_BGR2RGB)
+                payload = build_color_payload(rgb)
+                disp = cv2.resize(rgb, (320, 320), interpolation=cv2.INTER_NEAREST)
+                disp_bgr = cv2.cvtColor(disp, cv2.COLOR_RGB2BGR)
+                label = "INVERT"
+
             packet = bytearray([SYNC_MARKER, CMD_FRAME]) + payload
             ser.write(packet)
             byte_count += len(packet)
 
-            cv2.putText(disp_bgr, f"{label} | FPS: {fps:.1f} | Gain: {CONTRAST_GAIN:.1f}",
+            cv2.putText(disp_bgr, f"{label} | FPS:{fps:.0f} | Gain:{CONTRAST_GAIN:.1f}",
                         (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 1)
-            cv2.putText(disp_bgr, "[m] mode  [+/-] contrast  [q] quit",
+            cv2.putText(disp_bgr, "[m]mode [+/-]gain [i]invert [q]quit",
                         (5, 310), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (100, 100, 100), 1)
             cv2.imshow("Webcam -> 8x8 Matrix", disp_bgr)
 
@@ -149,8 +173,13 @@ def main():
             if key == ord('q'):
                 break
             elif key == ord('m'):
-                mode = "bw" if mode == "color" else "color"
-                print(f"Mode switched to: {mode.upper()}")
+                modes = ["color", "bw", "threshold", "invert"]
+                idx = modes.index(mode)
+                mode = modes[(idx + 1) % len(modes)]
+                print(f"Mode: {mode.upper()}")
+            elif key == ord('i'):
+                mode = "invert" if mode != "invert" else "bw"
+                print(f"Mode: {mode.upper()}")
             elif key == ord('+') or key == ord('='):
                 CONTRAST_GAIN = min(10.0, CONTRAST_GAIN + 0.5)
                 print(f"Contrast gain: {CONTRAST_GAIN:.1f}")
