@@ -103,8 +103,8 @@ def main():
         ser.close()
         sys.exit(1)
 
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
     frame_count = 0
     byte_count = 0
@@ -117,12 +117,15 @@ def main():
             if not ret:
                 break
 
+            h, w = frame.shape[:2]
+            pixel_size = h
+
             if mode == "color":
                 small = cv2.resize(frame, (MATRIX_W, MATRIX_H), interpolation=cv2.INTER_AREA)
                 rgb = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
                 payload = build_color_payload(rgb)
-                disp = cv2.resize(rgb, (320, 320), interpolation=cv2.INTER_NEAREST)
-                disp_bgr = cv2.cvtColor(disp, cv2.COLOR_RGB2BGR)
+                pixelated = cv2.resize(rgb, (pixel_size, pixel_size), interpolation=cv2.INTER_NEAREST)
+                pixelated_bgr = cv2.cvtColor(pixelated, cv2.COLOR_RGB2BGR)
                 label = "COLOR"
 
             elif mode == "bw":
@@ -130,8 +133,8 @@ def main():
                 small = cv2.resize(gray, (MATRIX_W, MATRIX_H), interpolation=cv2.INTER_AREA)
                 boosted = apply_contrast_stretch(small)
                 payload = build_gray_payload(boosted)
-                disp = cv2.resize(boosted, (320, 320), interpolation=cv2.INTER_NEAREST)
-                disp_bgr = cv2.cvtColor(disp, cv2.COLOR_GRAY2BGR)
+                pixelated = cv2.resize(boosted, (pixel_size, pixel_size), interpolation=cv2.INTER_NEAREST)
+                pixelated_bgr = cv2.cvtColor(pixelated, cv2.COLOR_GRAY2BGR)
                 label = "B&W"
 
             elif mode == "threshold":
@@ -139,8 +142,8 @@ def main():
                 small = cv2.resize(gray, (MATRIX_W, MATRIX_H), interpolation=cv2.INTER_AREA)
                 binary = apply_threshold(small)
                 payload = build_gray_payload(binary)
-                disp = cv2.resize(binary, (320, 320), interpolation=cv2.INTER_NEAREST)
-                disp_bgr = cv2.cvtColor(disp, cv2.COLOR_GRAY2BGR)
+                pixelated = cv2.resize(binary, (pixel_size, pixel_size), interpolation=cv2.INTER_NEAREST)
+                pixelated_bgr = cv2.cvtColor(pixelated, cv2.COLOR_GRAY2BGR)
                 label = "THRESHOLD"
 
             elif mode == "invert":
@@ -148,19 +151,30 @@ def main():
                 inv = cv2.bitwise_not(small)
                 rgb = cv2.cvtColor(inv, cv2.COLOR_BGR2RGB)
                 payload = build_color_payload(rgb)
-                disp = cv2.resize(rgb, (320, 320), interpolation=cv2.INTER_NEAREST)
-                disp_bgr = cv2.cvtColor(disp, cv2.COLOR_RGB2BGR)
+                pixelated = cv2.resize(rgb, (pixel_size, pixel_size), interpolation=cv2.INTER_NEAREST)
+                pixelated_bgr = cv2.cvtColor(pixelated, cv2.COLOR_RGB2BGR)
                 label = "INVERT"
 
             packet = bytearray([SYNC_MARKER, CMD_FRAME]) + payload
             ser.write(packet)
             byte_count += len(packet)
 
-            cv2.putText(disp_bgr, f"{label} | FPS:{fps:.0f} | Gain:{CONTRAST_GAIN:.1f}",
-                        (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 1)
-            cv2.putText(disp_bgr, "[m]mode [+/-]gain [i]invert [q]quit",
-                        (5, 310), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (100, 100, 100), 1)
-            cv2.imshow("Webcam -> 8x8 Matrix", disp_bgr)
+            # Side-by-side: original (left) + pixelated (right)
+            original = frame.copy()
+            cv2.putText(original, "ORIGINAL", (10, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+            cv2.putText(pixelated_bgr, f"8x8 {label}", (10, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+            cv2.putText(pixelated_bgr, f"FPS:{fps:.0f} Gain:{CONTRAST_GAIN:.1f}", (10, h - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (100, 100, 100), 1)
+
+            separator = np.zeros((h, 10, 3), dtype=np.uint8)
+            combined = np.hstack((original, separator, pixelated_bgr))
+
+            cv2.putText(combined, "[m]mode [+/-]gain [i]invert [q]quit", (10, h + 20),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+
+            cv2.imshow("Webcam -> 8x8 Matrix", combined)
 
             frame_count += 1
             elapsed = time.time() - start_time
