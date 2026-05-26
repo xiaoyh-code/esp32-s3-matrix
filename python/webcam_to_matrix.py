@@ -14,6 +14,7 @@ CMD_FRAME = 0x01
 
 CONTRAST_GAIN = 4.0
 CONTRAST_CENTER = 127
+BLACK_THRESHOLD = 20  # pixels darker than this become pure black
 mode = "bw"
 
 
@@ -40,7 +41,19 @@ def apply_threshold(gray):
     return binary
 
 
+def apply_black_threshold(rgb_array):
+    """Force near-black pixels to pure black to eliminate noise"""
+    result = rgb_array.copy()
+    for y in range(MATRIX_H):
+        for x in range(MATRIX_W):
+            r, g, b = int(result[y, x, 0]), int(result[y, x, 1]), int(result[y, x, 2])
+            if (r + g + b) / 3.0 < BLACK_THRESHOLD:
+                result[y, x] = [0, 0, 0]
+    return result
+
+
 def build_color_payload(rgb):
+    rgb = apply_black_threshold(rgb)
     payload = bytearray()
     for y in range(MATRIX_H):
         for x in range(MATRIX_W):
@@ -54,6 +67,8 @@ def build_gray_payload(boosted):
     for y in range(MATRIX_H):
         for x in range(MATRIX_W):
             v = int(boosted[y, x])
+            if v < BLACK_THRESHOLD:
+                v = 0
             payload.extend([v, v, v])
     return payload
 
@@ -82,7 +97,7 @@ def find_serial_port():
 
 
 def main():
-    global CONTRAST_GAIN, mode
+    global CONTRAST_GAIN, mode, BLACK_THRESHOLD
 
     port = find_serial_port()
     if port is None:
@@ -95,7 +110,7 @@ def main():
     print("Waiting for ESP32 to be ready...")
     time.sleep(4)
     print("\nModes: COLOR | B&W | THRESHOLD | INVERT")
-    print("Keys: [m] toggle  [+/-] gain  [i] invert  [q] quit\n")
+    print("Keys: [m]toggle [+/-]gain [b/n]black-thresh [i]invert [q]quit\n")
 
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
@@ -165,13 +180,13 @@ def main():
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
             cv2.putText(pixelated_bgr, f"8x8 {label}", (10, 30),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-            cv2.putText(pixelated_bgr, f"FPS:{fps:.0f} Gain:{CONTRAST_GAIN:.1f}", (10, h - 10),
+            cv2.putText(pixelated_bgr, f"FPS:{fps:.0f} Gain:{CONTRAST_GAIN:.1f} Black:{BLACK_THRESHOLD}", (10, h - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (100, 100, 100), 1)
 
             separator = np.zeros((h, 10, 3), dtype=np.uint8)
             combined = np.hstack((original, separator, pixelated_bgr))
 
-            cv2.putText(combined, "[m]mode [+/-]gain [i]invert [q]quit", (10, h + 20),
+            cv2.putText(combined, "[m]mode [+/-]gain [b/n]black [i]invert [q]quit", (10, h + 20),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
 
             cv2.imshow("Webcam -> 8x8 Matrix", combined)
@@ -200,6 +215,12 @@ def main():
             elif key == ord('-'):
                 CONTRAST_GAIN = max(0.5, CONTRAST_GAIN - 0.5)
                 print(f"Contrast gain: {CONTRAST_GAIN:.1f}")
+            elif key == ord('b'):
+                BLACK_THRESHOLD = min(100, BLACK_THRESHOLD + 5)
+                print(f"Black threshold: {BLACK_THRESHOLD}")
+            elif key == ord('n'):
+                BLACK_THRESHOLD = max(0, BLACK_THRESHOLD - 5)
+                print(f"Black threshold: {BLACK_THRESHOLD}")
 
     except serial.SerialException as e:
         print(f"Serial error: {e}")
