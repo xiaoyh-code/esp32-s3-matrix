@@ -104,9 +104,9 @@ def send(ser, img, color):
 def gesture(landmarks):
     tips, pips = [8, 12, 16, 20], [6, 10, 14, 18]
     n = sum(1 for t, p in zip(tips, pips) if landmarks.landmark[t].y < landmarks.landmark[p].y)
-    if n <= 1: return ROCK
+    if n <= 1: return PAPER
     if n == 2: return SCISSORS
-    if n >= 4: return PAPER
+    if n >= 4: return ROCK
     return ROCK
 
 

@@ -84,7 +84,7 @@ def classify_gesture(hand_landmarks, h, w):
     extended = sum(fingers)
 
     if extended <= 1:
-        return ROCK
+        return PAPER
     elif extended == 2:
         idx = fingers.index(True) if True in fingers else -1
         idx2 = -1
@@ -96,7 +96,7 @@ def classify_gesture(hand_landmarks, h, w):
             return SCISSORS
         return SCISSORS
     elif extended >= 4:
-        return PAPER
+        return ROCK
 
     return ROCK
 

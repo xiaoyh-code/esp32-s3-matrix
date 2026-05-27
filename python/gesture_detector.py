@@ -36,11 +36,11 @@ def detect_gesture(landmarks):
         if landmarks.landmark[tip_idx].y < landmarks.landmark[pip_idx].y:
             extended += 1
     if extended <= 1:
-        return ROCK
+        return PAPER
     elif extended == 2:
         return SCISSORS
     elif extended >= 4:
-        return PAPER
+        return ROCK
     return ROCK
 
 

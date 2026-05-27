@@ -159,11 +159,11 @@ def classify_gesture(hand_landmarks):
             fingers.append(False)
 
     if extended_count <= 1:
-        return ROCK
+        return PAPER
     elif extended_count == 2:
         return SCISSORS
     elif extended_count >= 4:
-        return PAPER
+        return ROCK
     return ROCK
 
 
